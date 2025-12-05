@@ -4,13 +4,12 @@ on:
   push:
     branches: [ "main" ]
 
-# 定义GITHUB_TOKEN的权限，需包含Packages写入权限
 permissions:
   contents: read
   packages: write
 
 jobs:
-  # 测试作业：检出代码并运行npm test
+  # 第一步：测试代码
   test:
     runs-on: ubuntu-latest
     steps:
@@ -28,17 +27,20 @@ jobs:
       - name: Run tests
         run: npm test
 
-  # 构建并推送镜像作业，依赖test作业执行成功
+  # 第二步：构建并推送 Docker 镜像
   build-and-push:
     needs: test
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 设置 Buildx
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # 登录 GHCR
       - name: Log in to the Container registry
         uses: docker/login-action@v3
         with:
@@ -46,13 +48,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # 🔥 新增步骤：提取短 SHA（附加功能 1）
+      - name: Extract short SHA
+        id: vars
+        run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
+
+      # 构建 + 推送镜像（多个 tag）
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          # 同时配置多个镜像标签，实现版本动态管理
           tags: |
             ghcr.io/${{ github.repository_owner }}/ci-cd-practice:latest
-            ghcr.io/${{ github.repository_owner }}/ci-cd-practice:${{ github.sha }}
-            ghcr.io/${{ github.repository_owner }}/ci-cd-practice:${{ github.sha | substr(0,7) }}
+            ghcr.io/${{ github.repository_owner }}/ci-cd-practice:${{ env.SHORT_SHA }}
