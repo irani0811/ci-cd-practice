@@ -71,7 +71,7 @@ jobs:
             # 标签1：latest（始终指向最新版本，方便日常使用，如“docker pull 用户名/ci-cd-practice:latest”）
             ghcr.io/${{ github.repository_owner }}/ci-cd-practice:latest
             # 标签2：Git Commit SHA（前7位，唯一标识当前提交，如“ci-cd-practice:8f32c9a”，支持回滚）
-            ghcr.io/${{ github.repository_owner }}/ci-cd-practice:${{ github.sha::7 }}
+            ghcr.io/${{ github.repository_owner }}/ci-cd-practice:${{ github.sha:0:7 }}
           # 优化配置：启用 Docker 层缓存（避免重复构建相同层，加速后续构建）
           cache-from: type=gha  # 从 GitHub Actions 缓存中读取已构建的镜像层
           cache-to: type=gha,mode=max  # 将当前构建的镜像层写入缓存，最大化复用
