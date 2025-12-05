@@ -1,75 +1,61 @@
-# 工作流名称：明确标识功能，包含版本管理特性
-name: Docker Build & Push (Versioned)
+# 工作流名称：关联p2标识，明确版本管理特性
+name: Docker Build & Push (p2 Versioned)
 
 # 触发条件：推送到main分支自动执行，或手动触发（便于测试）
 on:
   push:
-    branches: ["main"]  # 仅当代码推送到main分支时触发
-  workflow_dispatch:    # 支持在GitHub Actions页面手动点击运行
+    branches: ["main"]
+  workflow_dispatch:
 
-# 权限配置：遵循最小权限原则，仅授予必需权限
+# 权限配置：最小权限原则
 permissions:
-  contents: read        # 允许读取仓库代码（检出代码、获取提交信息）
-  packages: write       # 允许写入GitHub Packages（推送Docker镜像）
+  contents: read
+  packages: write
 
-# 定义工作流中的任务（Jobs）：按依赖顺序执行
 jobs:
-  # 任务1：代码测试（验证代码可用性，测试不通过则终止后续构建）
   test:
-    runs-on: ubuntu-latest  # 使用GitHub托管的最新版Ubuntu虚拟机
-    steps:
-      # 步骤1：检出仓库代码（获取当前推送的完整代码）
-      - name: Checkout repository code
-        uses: actions/checkout@v4  # 官方Action，稳定拉取代码，v4为最新版
-      
-      # 步骤2：配置Node.js环境（与Dockerfile中Node版本保持一致）
-      - name: Setup Node.js 18
-        uses: actions/setup-node@v4  # 官方Action，自动安装指定Node版本
-        with:
-          node-version: "18"         # 匹配Dockerfile中的"node:18-alpine"
-          cache: "npm"               # 缓存npm依赖，加速后续构建（避免重复下载）
-      
-      # 步骤3：安装项目依赖（根据package.json安装所需依赖）
-      - name: Install project dependencies
-        run: npm install  # 执行npm安装命令，生成node_modules目录
-      
-      # 步骤4：运行测试脚本（验证代码可正常执行，对应package.json中的test脚本）
-      - name: Run code tests
-        run: npm test     # 执行测试命令，若返回非0状态码则标记任务失败
-
-  # 任务2：构建并推送Docker镜像（依赖test任务，仅测试通过后执行）
-  build-and-push:
-    needs: test  # 明确依赖test任务，确保测试不通过时不进入构建环节
     runs-on: ubuntu-latest
     steps:
-      # 步骤1：检出仓库代码（构建镜像需要当前代码中的Dockerfile、app.js等文件）
       - name: Checkout repository code
         uses: actions/checkout@v4
       
-      # 步骤2：配置Docker Buildx（Docker官方推荐工具，优化镜像构建流程，支持多平台）
+      - name: Setup Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+      
+      - name: Install project dependencies
+        run: npm install
+      
+      - name: Run code tests
+        run: npm test
+
+  build-and-push:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository code
+        uses: actions/checkout@v4
+      
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3  # 官方Action，启用Buildx功能
+        uses: docker/setup-buildx-action@v3
       
-      # 步骤3：登录GitHub Container Registry（GHCR），获取镜像推送权限
       - name: Log in to GitHub Container Registry (GHCR)
-        uses: docker/login-action@v3  # 官方Action，安全处理登录逻辑
+        uses: docker/login-action@v3
         with:
-          registry: ghcr.io                  # GHCR的固定域名（不可修改）
-          username: ${{ github.actor }}      # 自动获取当前GitHub用户名（无需手动填写）
-          password: ${{ secrets.GITHUB_TOKEN }}  # GitHub自动生成的临时密钥，无需手动配置
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       
-      # 步骤4：构建并推送Docker镜像（核心步骤，双标签实现版本动态管理）
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5  # 官方Action，支持构建+推送一体化
+      - name: Build and push Docker image (p2)
+        uses: docker/build-push-action@v5
         with:
-          context: .  # 构建上下文为当前项目根目录（即Dockerfile所在目录）
-          push: true  # 启用"推送镜像"功能（不设置则仅构建不推送）
-          # 关键配置：双标签设计，实现版本管理
+          context: .
+          push: true
+          # 镜像名称关联p2，同时保留Commit SHA版本标识
           tags: |
-            # 标签1：latest（始终指向最新版本，方便日常部署引用）
-            ghcr.io/${{ github.repository_owner }}/ci-cd-practice:latest
-            # 标签2：完整Git Commit SHA（唯一标识当前提交，旧版本不被覆盖，支持回滚）
-            ghcr.io/${{ github.repository_owner }}/ci-cd-practice:${{ github.sha }}
-          # 优化配置：启用Docker层缓存，加速后续构建（避免重复构建相同层）
-          cache-from: type=gha  # 从GitHub Actions缓存中读取已构建的镜像层
-          cache-to: type=gha,mode=max  # 将当前构建的镜像层写入缓存，最大化复用
+            ghcr.io/${{ github.repository_owner }}/ci-cd-practice-p2:latest
+            ghcr.io/${{ github.repository_owner }}/ci-cd-practice-p2:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
