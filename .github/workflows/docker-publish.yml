@@ -1,48 +1,70 @@
-name: Docker Build and Push
+name: Docker Build and Push (Versioned)
+# 触发条件：推送到 main 分支时自动触发，或手动触发
 on:
   push:
-    branches: [ "main" ]
-# 配置token权限
+    branches: ["main"]
+  workflow_dispatch: # 支持在 Actions 页面手动点击运行，方便测试
+
+# 权限配置：确保 Actions 能读取代码、写入 Packages（推送镜像必需）
 permissions:
   contents: read
   packages: write
 
 jobs:
-  # 测试作业
+  # 第一步：代码测试（只有测试通过，才会进入后续构建）
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest # 使用 GitHub 托管的 Ubuntu 虚拟机
     steps:
+      # 步骤1：检出仓库代码（获取当前推送的代码）
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4 # 官方 Action，稳定可靠
+
+      # 步骤2：配置 Node.js 环境（匹配项目依赖的 Node 版本）
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
-      - name: Install dependencies
-        run: npm install
-      - name: Run tests
-        run: npm test
+          node-version: "18" # 与 Dockerfile 中的 Node 18-alpine 版本一致
+          cache: "npm" # 缓存 npm 依赖，加速后续构建
 
-  # 构建并推送镜像作业
+      # 步骤3：安装项目依赖
+      - name: Install dependencies
+        run: npm install # 执行 npm 安装命令
+
+      # 步骤4：运行测试脚本（验证代码可用性）
+      - name: Run tests
+        run: npm test # 执行 package.json 中定义的 test 脚本
+
+  # 第二步：构建并推送 Docker 镜像（依赖 test 作业，测试通过才执行）
   build-and-push:
-    needs: test
+    needs: test # 明确依赖 test 作业，确保测试不通过时不构建
     runs-on: ubuntu-latest
     steps:
+      # 步骤1：检出仓库代码（构建镜像需要当前代码）
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      # 步骤2：配置 Docker Buildx（官方推荐工具，优化镜像构建流程）
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      - name: Log in to the Container registry
+
+      # 步骤3：登录 GitHub Container Registry（GHCR），获取推送权限
+      - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: ghcr.io # GHCR 的固定域名
+          username: ${{ github.actor }} # 当前 GitHub 用户名（自动获取，无需手动填）
+          password: ${{ secrets.GITHUB_TOKEN }} # GitHub 自动生成的密钥，无需手动配置
+
+      # 步骤4：构建并推送 Docker 镜像（核心步骤，同时打 2 个标签）
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: .
-          push: true
+          context: . # 指定构建上下文为当前项目根目录（包含 Dockerfile 和代码）
+          push: true # 启用“推送镜像”功能（不写则只构建不推送）
+          # 关键：同时打 2 个标签，实现版本管理
           tags: |
-            ghcr.io/${{ github.repository_owner }}/ci-cd-practice:latest
-            ghcr.io/${{ github.repository_owner }}/ci-cd-practice:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/ci-cd-practice:latest # 始终指向最新版本
+            ghcr.io/${{ github.repository_owner }}/ci-cd-practice:${{ github.sha::7 }} # 前7位 Commit SHA（简洁且唯一，如 8f32c9a）
+          # 可选优化：启用层缓存，加速后续构建（避免重复构建相同层）
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
